@@ -1,19 +1,99 @@
 import { useEffect, useState } from "react";
-import { LockKeyhole, Mail, User } from "lucide-react";
+import { ArrowRight, BarChart3, CalendarClock, LockKeyhole, Mail, Timer, User } from "lucide-react";
+
+type Route = "landing" | "login" | "create-account";
+
+const getRoute = (): Route => {
+  if (window.location.hash === "#login") {
+    return "login";
+  }
+
+  if (window.location.hash === "#create-account") {
+    return "create-account";
+  }
+
+  return "landing";
+};
 
 function App() {
-  const [isCreateAccount, setIsCreateAccount] = useState(
-    () => window.location.hash === "#create-account",
-  );
+  const [route, setRoute] = useState<Route>(() => getRoute());
+  const isCreateAccount = route === "create-account";
 
   useEffect(() => {
     const syncRoute = () => {
-      setIsCreateAccount(window.location.hash === "#create-account");
+      setRoute(getRoute());
     };
 
     window.addEventListener("hashchange", syncRoute);
     return () => window.removeEventListener("hashchange", syncRoute);
   }, []);
+
+  if (route === "landing") {
+    return (
+      <main className="landing-page">
+        <nav className="landing-nav" aria-label="Primary">
+          <a className="nav-brand" href="#landing" onClick={() => setRoute("landing")}>
+            Chronos
+          </a>
+          <div className="nav-actions">
+            <a className="ghost-link" href="#login" onClick={() => setRoute("login")}>
+              Login
+            </a>
+            <a className="nav-button" href="#create-account" onClick={() => setRoute("create-account")}>
+              Start
+            </a>
+          </div>
+        </nav>
+
+        <section className="hero-section" aria-labelledby="landing-title">
+          <div className="hero-copy">
+            <p className="eyebrow">Time tracking for focused teams</p>
+            <h1 id="landing-title">Record hours with less friction and clearer context.</h1>
+            <p>
+              Chronos helps teams log shifts, review work patterns, and keep every hour easy
+              to audit without slowing down the day.
+            </p>
+            <div className="hero-actions">
+              <a className="primary-button hero-button" href="#create-account" onClick={() => setRoute("create-account")}>
+                Get started
+                <ArrowRight size={20} aria-hidden="true" />
+              </a>
+              <a className="secondary-button" href="#login" onClick={() => setRoute("login")}>
+                Login
+              </a>
+            </div>
+          </div>
+
+          <div className="product-panel" aria-label="Chronos overview">
+            <div className="panel-header">
+              <span>Today</span>
+              <strong>07h 45m</strong>
+            </div>
+            <div className="timer-card">
+              <Timer size={28} aria-hidden="true" />
+              <div>
+                <span>Active record</span>
+                <strong>Design review</strong>
+              </div>
+              <p>02:18:42</p>
+            </div>
+            <div className="metric-grid">
+              <div>
+                <CalendarClock size={22} aria-hidden="true" />
+                <span>Week</span>
+                <strong>38h</strong>
+              </div>
+              <div>
+                <BarChart3 size={22} aria-hidden="true" />
+                <span>Focus</span>
+                <strong>86%</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="login-page">
@@ -123,7 +203,7 @@ function App() {
           {isCreateAccount ? "Already have an account? " : "Don't have an account? "}
           <a
             href={isCreateAccount ? "#login" : "#create-account"}
-            onClick={() => setIsCreateAccount(!isCreateAccount)}
+            onClick={() => setRoute(isCreateAccount ? "login" : "create-account")}
           >
             {isCreateAccount ? "Login" : "Create an account"}
           </a>
