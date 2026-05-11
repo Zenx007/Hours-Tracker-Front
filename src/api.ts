@@ -103,7 +103,9 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
   } catch {
-    throw new Error(`Nao foi possivel conectar a API em ${API_BASE_URL}. Verifique se o servidor esta online.`);
+    throw new Error(
+      `Nao foi possivel conectar a API em ${API_BASE_URL}. Se o servidor estiver online, verifique a configuracao de CORS para a origem deste front.`,
+    );
   }
 
   const data = await readJson<ApiResponse<T>>(response);
@@ -124,7 +126,9 @@ export const api = {
     try {
       response = await fetch(`${API_BASE_URL}/health`);
     } catch {
-      throw new Error(`Nao foi possivel conectar a API em ${API_BASE_URL}.`);
+      throw new Error(
+        `Nao foi possivel conectar a API em ${API_BASE_URL}. Se o servidor estiver online, verifique a configuracao de CORS para a origem deste front.`,
+      );
     }
 
     const data = await readJson<{ success: boolean; message: string }>(response);
