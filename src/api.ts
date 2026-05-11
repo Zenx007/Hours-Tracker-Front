@@ -1,5 +1,8 @@
 const API_BASE_URL =
-  (import.meta.env.VITE_API_URL || "https://hours-tracker.up.railway.app").replace(/\/+$/, "");
+  (
+    import.meta.env.VITE_API_URL ||
+    (import.meta.env.DEV ? "/api" : "https://hours-tracker.up.railway.app")
+  ).replace(/\/+$/, "");
 
 export type ApiResponse<T> = {
   success: boolean;
@@ -91,11 +94,17 @@ const request = async <T>(path: string, options: RequestOptions = {}): Promise<T
         ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       };
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...fetchOptions,
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...fetchOptions,
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch {
+    throw new Error(`Nao foi possivel conectar a API em ${API_BASE_URL}. Verifique se o servidor esta online.`);
+  }
 
   const data = await readJson<ApiResponse<T>>(response);
 
@@ -110,7 +119,14 @@ export const api = {
   baseUrl: API_BASE_URL,
 
   async health() {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    let response: Response;
+
+    try {
+      response = await fetch(`${API_BASE_URL}/health`);
+    } catch {
+      throw new Error(`Nao foi possivel conectar a API em ${API_BASE_URL}.`);
+    }
+
     const data = await readJson<{ success: boolean; message: string }>(response);
 
     if (!response.ok || data?.success === false) {
