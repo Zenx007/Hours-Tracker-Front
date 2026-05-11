@@ -14,6 +14,25 @@ export type User = {
   email: string;
 };
 
+export type AuthSession = {
+  user: User;
+  accessToken: string;
+  tokenType: string;
+  expiresIn: string;
+};
+
+export type CreateUserPayload = Pick<User, "name" | "email"> & {
+  password: string;
+};
+
+export type LoginPayload = Pick<User, "email"> & {
+  password: string;
+};
+
+export type UpdateUserPayload = User & {
+  password?: string;
+};
+
 export type HoursRecord = {
   id: number;
   date: string;
@@ -41,6 +60,7 @@ export type HoursRecordPayload = {
 };
 
 type RequestOptions = Omit<RequestInit, "body"> & {
+  authToken?: string;
   body?: unknown;
 };
 
@@ -59,15 +79,20 @@ const readJson = async <T>(response: Response): Promise<T | null> => {
 };
 
 const request = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
+  const { authToken, ...fetchOptions } = options;
   const headers = options.body
     ? {
         "Content-Type": "application/json",
         ...options.headers,
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       }
-    : options.headers;
+    : {
+        ...options.headers,
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      };
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
@@ -95,62 +120,65 @@ export const api = {
     return data?.message || "API online";
   },
 
-  getUsers() {
-    return request<User[]>("/User/GetAll");
+  getUsers(authToken: string) {
+    return request<User[]>("/User/GetAll", { authToken });
   },
 
-  createUser(payload: Pick<User, "name" | "email">) {
+  createUser(payload: CreateUserPayload) {
     return request<User>("/User/Create", {
       method: "POST",
       body: payload,
     });
   },
 
-  login(email: string) {
-    return request<User>("/User/Login", {
+  login(payload: LoginPayload) {
+    return request<AuthSession>("/User/Login", {
       method: "POST",
-      body: { email },
+      body: payload,
     });
   },
 
-  updateUser(payload: User) {
+  updateUser(payload: UpdateUserPayload, authToken: string) {
     return request<User>("/User/Update", {
       method: "POST",
+      authToken,
       body: payload,
     });
   },
 
-  prepareUser(id: number) {
-    return request<User>(`/User/Prepare?id=${encodeURIComponent(id)}`);
+  prepareUser(id: number, authToken: string) {
+    return request<User>(`/User/Prepare?id=${encodeURIComponent(id)}`, { authToken });
   },
 
-  getRecords() {
-    return request<HoursRecord[]>("/HoursRecord/GetAll");
+  getRecords(authToken: string) {
+    return request<HoursRecord[]>("/HoursRecord/GetAll", { authToken });
   },
 
-  getRecordsByUserId(userId: number) {
-    return request<HoursRecord[]>(`/HoursRecord/GetAllByUserId?userId=${encodeURIComponent(userId)}`);
+  getRecordsByUserId(userId: number, authToken: string) {
+    return request<HoursRecord[]>(`/HoursRecord/GetAllByUserId?userId=${encodeURIComponent(userId)}`, { authToken });
   },
 
-  prepareRecord(id: number) {
-    return request<HoursRecord>(`/HoursRecord/Prepare?id=${encodeURIComponent(id)}`);
+  prepareRecord(id: number, authToken: string) {
+    return request<HoursRecord>(`/HoursRecord/Prepare?id=${encodeURIComponent(id)}`, { authToken });
   },
 
-  createRecord(payload: HoursRecordPayload) {
+  createRecord(payload: HoursRecordPayload, authToken: string) {
     return request<HoursRecord>("/HoursRecord/Create", {
       method: "POST",
+      authToken,
       body: payload,
     });
   },
 
-  updateRecord(payload: HoursRecordPayload & { id: number }) {
+  updateRecord(payload: HoursRecordPayload & { id: number }, authToken: string) {
     return request<HoursRecord>("/HoursRecord/Update", {
       method: "POST",
+      authToken,
       body: payload,
     });
   },
 
-  deleteRecord(id: number) {
-    return request<unknown>(`/HoursRecord/Delete?id=${encodeURIComponent(id)}`);
+  deleteRecord(id: number, authToken: string) {
+    return request<unknown>(`/HoursRecord/Delete?id=${encodeURIComponent(id)}`, { authToken });
   },
 };

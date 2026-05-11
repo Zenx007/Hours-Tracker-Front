@@ -4,6 +4,7 @@ import {
   BarChart3,
   CalendarClock,
   Clock3,
+  LockKeyhole,
   LogOut,
   Mail,
   Pencil,
@@ -15,7 +16,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { HoursRecord, HoursRecordPayload, User as ApiUser, api } from "./api";
+import { AuthSession, HoursRecord, HoursRecordPayload, api } from "./api";
 
 type Route = "landing" | "login" | "create-account" | "dashboard";
 
@@ -27,7 +28,7 @@ type RecordFormState = {
   dailyResume: string;
 };
 
-const userStorageKey = "chronos:user";
+const sessionStorageKey = "chronos:session";
 
 const getRoute = (): Route => {
   if (window.location.hash === "#login") {
@@ -45,17 +46,25 @@ const getRoute = (): Route => {
   return "landing";
 };
 
-const loadStoredUser = (): ApiUser | null => {
-  const rawUser = window.localStorage.getItem(userStorageKey);
+const loadStoredSession = (): AuthSession | null => {
+  const rawSession = window.localStorage.getItem(sessionStorageKey);
 
-  if (!rawUser) {
+  if (!rawSession) {
     return null;
   }
 
   try {
-    return JSON.parse(rawUser) as ApiUser;
+    const session = JSON.parse(rawSession) as AuthSession;
+
+    if (!session?.user || !session.accessToken) {
+      window.localStorage.removeItem(sessionStorageKey);
+      window.localStorage.removeItem("chronos:user");
+      return null;
+    }
+
+    return session;
   } catch {
-    window.localStorage.removeItem(userStorageKey);
+    window.localStorage.removeItem(sessionStorageKey);
     return null;
   }
 };
@@ -138,9 +147,9 @@ const formatMinutes = (minutes: number) => {
 function App() {
   const [route, setRoute] = useState<Route>(() => {
     const initialRoute = getRoute();
-    return initialRoute === "landing" && loadStoredUser() ? "dashboard" : initialRoute;
+    return initialRoute === "landing" && loadStoredSession() ? "dashboard" : initialRoute;
   });
-  const [currentUser, setCurrentUser] = useState<ApiUser | null>(() => loadStoredUser());
+  const [session, setSession] = useState<AuthSession | null>(() => loadStoredSession());
   const [records, setRecords] = useState<HoursRecord[]>([]);
   const [recordForm, setRecordForm] = useState<RecordFormState>(() => emptyRecordForm());
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -151,6 +160,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState("Conectando...");
   const isCreateAccount = route === "create-account";
+  const currentUser = session?.user || null;
 
   const navigate = useCallback((nextRoute: Route) => {
     setRoute(nextRoute);
@@ -158,10 +168,11 @@ function App() {
   }, []);
 
   const storeUserSession = useCallback(
-    (user: ApiUser) => {
-      window.localStorage.setItem(userStorageKey, JSON.stringify(user));
-      setCurrentUser(user);
-      setMessage(`Ola, ${user.name}.`);
+    (nextSession: AuthSession) => {
+      window.localStorage.setItem(sessionStorageKey, JSON.stringify(nextSession));
+      window.localStorage.removeItem("chronos:user");
+      setSession(nextSession);
+      setMessage(`Ola, ${nextSession.user.name}.`);
       setError(null);
       navigate("dashboard");
     },
@@ -169,7 +180,7 @@ function App() {
   );
 
   const loadRecords = useCallback(async () => {
-    if (!currentUser) {
+    if (!currentUser || !session?.accessToken) {
       return;
     }
 
@@ -177,7 +188,7 @@ function App() {
     setError(null);
 
     try {
-      const userRecords = await api.getRecordsByUserId(currentUser.id);
+      const userRecords = await api.getRecordsByUserId(currentUser.id, session.accessToken);
       setRecords(userRecords);
     } catch (err) {
       setRecords([]);
@@ -185,7 +196,7 @@ function App() {
     } finally {
       setIsRecordsLoading(false);
     }
-  }, [currentUser]);
+  }, [currentUser, session?.accessToken]);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -235,10 +246,22 @@ function App() {
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get("email") || "").trim();
     const name = String(formData.get("name") || "").trim();
+    const password = String(formData.get("password") || "");
+    const confirmPassword = String(formData.get("confirm-password") || "");
+
+    if (isCreateAccount && password !== confirmPassword) {
+      setError("As senhas nao conferem.");
+      setIsAuthLoading(false);
+      return;
+    }
 
     try {
-      const user = isCreateAccount ? await api.createUser({ name, email }) : await api.login(email);
-      storeUserSession(user);
+      if (isCreateAccount) {
+        await api.createUser({ name, email, password });
+      }
+
+      const nextSession = await api.login({ email, password });
+      storeUserSession(nextSession);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel autenticar.");
     } finally {
@@ -277,16 +300,21 @@ function App() {
       return;
     }
 
+    if (!session?.accessToken) {
+      setError("Sessao expirada. Faca login novamente.");
+      return;
+    }
+
     setIsSavingRecord(true);
     setError(null);
     setMessage(null);
 
     try {
       if (editingId) {
-        await api.updateRecord({ ...payload, id: editingId });
+        await api.updateRecord({ ...payload, id: editingId }, session.accessToken);
         setMessage("Registro atualizado.");
       } else {
-        await api.createRecord(payload);
+        await api.createRecord(payload, session.accessToken);
         setMessage("Registro criado.");
       }
 
@@ -325,7 +353,11 @@ function App() {
     setMessage(null);
 
     try {
-      await api.deleteRecord(id);
+      if (!session?.accessToken) {
+        throw new Error("Sessao expirada. Faca login novamente.");
+      }
+
+      await api.deleteRecord(id, session.accessToken);
       setMessage("Registro removido.");
       await loadRecords();
     } catch (err) {
@@ -334,8 +366,9 @@ function App() {
   };
 
   const handleLogout = () => {
-    window.localStorage.removeItem(userStorageKey);
-    setCurrentUser(null);
+    window.localStorage.removeItem(sessionStorageKey);
+    window.localStorage.removeItem("chronos:user");
+    setSession(null);
     setRecords([]);
     setRecordForm(emptyRecordForm());
     setEditingId(null);
@@ -597,7 +630,7 @@ function App() {
         <header className="login-heading">
           <p className="brand-mark">Chronos</p>
           <h1 id="auth-title">{isCreateAccount ? "Criar conta" : "Bem-vindo de volta"}</h1>
-          <p>{isCreateAccount ? "Crie seu usuario na API para registrar horas." : "Entre com o e-mail cadastrado na API."}</p>
+          <p>{isCreateAccount ? "Crie seu usuario na API para registrar horas." : "Entre com e-mail e senha para acessar seus registros."}</p>
         </header>
 
         <div className="login-card">
@@ -619,6 +652,40 @@ function App() {
                 <input id="email" name="email" type="email" autoComplete="email" placeholder="nome@empresa.com" required />
               </div>
             </div>
+
+            <div className="field-group">
+              <label htmlFor="password">Senha</label>
+              <div className="input-shell">
+                <LockKeyhole size={20} aria-hidden="true" />
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete={isCreateAccount ? "new-password" : "current-password"}
+                  placeholder="Digite sua senha"
+                  minLength={6}
+                  required
+                />
+              </div>
+            </div>
+
+            {isCreateAccount && (
+              <div className="field-group">
+                <label htmlFor="confirm-password">Confirmar senha</label>
+                <div className="input-shell">
+                  <LockKeyhole size={20} aria-hidden="true" />
+                  <input
+                    id="confirm-password"
+                    name="confirm-password"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Repita sua senha"
+                    minLength={6}
+                    required
+                  />
+                </div>
+              </div>
+            )}
 
             {(message || error) && (
               <div className={`status-banner ${error ? "error-banner" : ""}`} role="status">
